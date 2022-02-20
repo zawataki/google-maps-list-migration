@@ -1,3 +1,5 @@
+[![CI](https://github.com/zawataki/google-maps-list-migration/actions/workflows/main.yml/badge.svg)](https://github.com/zawataki/google-maps-list-migration/actions/workflows/main.yml)
+
 # 概要
 Googleマップの保存済みのリストを別のアカウントのリストへインポートする。
 メモも一緒にインポートされる。
