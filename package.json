@@ -4,6 +4,7 @@
   "description": "Import Google Maps list csv",
   "main": "import-list.js",
   "scripts": {
+    "lint": "eslint import-list.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Yuki Takizawa",
