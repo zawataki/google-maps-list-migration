@@ -1,13 +1,13 @@
-'use strict'
+'use strict';
 
 const log4js = require('log4js');
 const logger = log4js.getLogger();
 log4js.configure({
   appenders: {
-    err: { type: 'stderr' }
+    err: {type: 'stderr'}
   },
   categories: {
-    default: { appenders: ['err'], level: 'ERROR' }
+    default: {appenders: ['err'], level: 'ERROR'}
   }
 });
 
@@ -47,7 +47,7 @@ const argv = yargs
   .alias('help', 'h')
   .version(false)
   .locale('en')
-  .check((argv, options) => {
+  .check((argv) => {
     if (argv._.length != 1) {
       throw new Error("[ERROR] Please specify CSV_FILE");
     }
@@ -83,7 +83,7 @@ if (argv.verbose) {
 
 const parseCsv = async () => {
   const fs = require('fs');
-  const { parse } = require('csv-parse/sync');
+  const {parse} = require('csv-parse/sync');
 
   const inputBuffer = fs.readFileSync(argv.inputFilePath);
   const options = {
@@ -132,7 +132,7 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
       page.waitForNavigation(),
       await page.keyboard.press('Enter')
     ]);
-    await page.waitForSelector('input[type="password"]', { visible: true });
+    await page.waitForSelector('input[type="password"]', {visible: true});
     await page.type('input[type="password"]', argv.pass);
     await Promise.all([
       page.waitForNavigation(),
@@ -144,7 +144,7 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
   }
 
   logger.debug('Wait for page rendering');
-  await page.waitForSelector('button[aria-label*="住所"]', { timeout: 10000 });
+  await page.waitForSelector('button[aria-label*="住所"]', {timeout: 10000});
 
   const alreadySaved = (await page.$x('//div[text()="「お気に入り」に保存しました"]')).length !== 0;
   if (!alreadySaved) {
@@ -189,7 +189,7 @@ const savePlacesAsFavorite = async (records) => {
   puppeteer.use(StealthPlugin());
 
   logger.debug('Launch Puppeteer');
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({headless: false});
 
   logger.debug('Open new page');
   const page = await browser.newPage();
