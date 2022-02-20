@@ -13,6 +13,13 @@ log4js.configure({
 
 logger.level = 'info';
 
+const mapTypeToListName = {
+  'favorite': 'お気に入り',
+  'want-to-go': '行ってみたい',
+  'travel-plans': '旅行プラン',
+  'starred-places': 'スター付き',
+};
+
 const yargs = require('yargs');
 const argv = yargs
   .usage(`Usage: node $0 CSV_FILE <options>
@@ -32,7 +39,7 @@ const argv = yargs
     description: 'Type of list to import to',
     type: 'string',
     default: 'favorite',
-    choices: ['favorite', 'want-to-go']
+    choices: Object.keys(mapTypeToListName)
   })
   .option('from', {
     description: 'Handle records starting from a requested number of records. The count is 1-based.',
@@ -106,20 +113,6 @@ const parseCsv = async () => {
   return records;
 };
 
-
-function getListName(type) {
-  switch (type) {
-    case 'favorite':
-      return 'お気に入り';
-
-    case 'want-to-go':
-      return '行ってみたい';
-
-    default:
-      throw new Error("Unknown type: " + type);
-  }
-}
-
 const URL = require('url').URL;
 
 const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
@@ -166,7 +159,7 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
   logger.debug('Wait for page rendering');
   await page.waitForSelector('button[aria-label*="住所"]', {timeout: 10000});
 
-  const listName = getListName(argv.type);
+  const listName = mapTypeToListName[argv.type];
   const alreadySaved = (await page.$x(`//div[text()="「${listName}」に保存しました"]`)).length !== 0;
   if (!alreadySaved) {
     logger.debug('Click save button');
@@ -182,21 +175,26 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
   }
 
   if (memo) {
-    const memoExists = await page.$(`button[aria-label="「${listName}」のメモを編集します"]`) !== null;
-
-    if (memoExists) {
-      logger.error('Memo already exists. Please manually append memo.'
-        + ` Name: "${title}". Memo: "${memo}". URL: "${url}"`);
+    if (argv.type === 'starred-places') {
+      logger.warn(`${listName} list does not have a memo feature.`
+        + ` So this memo will not be saved. Name: "${title}". Memo: "${memo}". URL: "${url}"`);
     } else {
-      logger.debug(`Add memo: "${memo}"`);
-      let memoAdditionButton = await page.waitForSelector(`button[aria-label="「${listName}」にメモを追加します"]`);
-      await memoAdditionButton.click();
+      const memoExists = await page.$(`button[aria-label="「${listName}」のメモを編集します"]`) !== null;
 
-      await page.waitForSelector('textarea[aria-label]');
-      await page.type('textarea[aria-label]', memo);
+      if (memoExists) {
+        logger.error('Memo already exists. Please manually append memo.'
+          + ` Name: "${title}". Memo: "${memo}". URL: "${url}"`);
+      } else {
+        logger.debug(`Add memo: "${memo}"`);
+        let memoAdditionButton = await page.waitForSelector(`button[aria-label="「${listName}」にメモを追加します"]`);
+        await memoAdditionButton.click();
 
-      let completeButton = await page.waitForXPath('//button[text()="完了"]');
-      await completeButton.click();
+        await page.waitForSelector('textarea[aria-label]');
+        await page.type('textarea[aria-label]', memo);
+
+        let completeButton = await page.waitForXPath('//button[text()="完了"]');
+        await completeButton.click();
+      }
     }
   }
 
