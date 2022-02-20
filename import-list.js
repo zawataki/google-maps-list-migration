@@ -28,6 +28,12 @@ const argv = yargs
     type: 'string',
     demandOption: true,
   })
+  .option('type', {
+    description: 'Type of list to import to',
+    type: 'string',
+    default: 'favorite',
+    choices: ['favorite', 'want-to-go']
+  })
   .option('from', {
     description: 'Handle records starting from a requested number of records. The count is 1-based.',
     type: 'number',
@@ -100,6 +106,20 @@ const parseCsv = async () => {
   return records;
 };
 
+
+function getListName(type) {
+  switch (type) {
+    case 'favorite':
+      return 'お気に入り';
+
+    case 'want-to-go':
+      return '行ってみたい';
+
+    default:
+      throw new Error("Unknown type: " + type);
+  }
+}
+
 const URL = require('url').URL;
 
 const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
@@ -146,29 +166,30 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
   logger.debug('Wait for page rendering');
   await page.waitForSelector('button[aria-label*="住所"]', {timeout: 10000});
 
-  const alreadySaved = (await page.$x('//div[text()="「お気に入り」に保存しました"]')).length !== 0;
+  const listName = getListName(argv.type);
+  const alreadySaved = (await page.$x(`//div[text()="「${listName}」に保存しました"]`)).length !== 0;
   if (!alreadySaved) {
     logger.debug('Click save button');
-    let saveButtonElement = await page.$('button[data-value="保存"]');
+    let saveButtonElement = await page.$('button[data-value^="保存"]');
     await saveButtonElement.click();
 
     logger.debug('Click favorite in save menu');
-    let menuItemFavoriteElement = await page.waitForSelector('li[role="menuitemcheckbox"]');
+    let menuItemFavoriteElement = await page.waitForXPath(`//div[text()="${listName}"]`);
     await menuItemFavoriteElement.click();
 
     logger.debug('Wait until saving finish');
-    await page.waitForSelector('div[aria-label="「お気に入り」に保存しました"]');
+    await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
   }
 
   if (memo) {
-    const memoExists = await page.$('button[aria-label="「お気に入り」のメモを編集します"]') !== null;
+    const memoExists = await page.$(`button[aria-label="「${listName}」のメモを編集します"]`) !== null;
 
     if (memoExists) {
       logger.error('Memo already exists. Please manually append memo.'
         + ` Name: "${title}". Memo: "${memo}". URL: "${url}"`);
     } else {
       logger.debug(`Add memo: "${memo}"`);
-      let memoAdditionButton = await page.waitForSelector('button[aria-label="「お気に入り」にメモを追加します"]');
+      let memoAdditionButton = await page.waitForSelector(`button[aria-label="「${listName}」にメモを追加します"]`);
       await memoAdditionButton.click();
 
       await page.waitForSelector('textarea[aria-label]');
