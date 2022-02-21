@@ -18,6 +18,7 @@ const mapTypeToListName = {
   'want-to-go': '行ってみたい',
   'travel-plans': '旅行プラン',
   'starred-places': 'スター付き',
+  'custom': '',
 };
 
 const yargs = require('yargs');
@@ -26,18 +27,17 @@ const argv = yargs
 
   Imports Google Maps saved list located CSV_FILE`)
   .option('email', {
-    description: 'Email address of Google account to import to',
+    description: 'Email address of Google account to import to.',
     type: 'string',
     demandOption: true,
   })
   .option('pass', {
-    description: 'Password of Google account to import to',
+    description: 'Password of Google account to import to.',
     type: 'string',
     demandOption: true,
   })
   .option('type', {
-    description: 'Type of list to import to',
-    type: 'string',
+    description: 'Type of list to import to.',
     default: 'favorite',
     choices: Object.keys(mapTypeToListName)
   })
@@ -50,12 +50,45 @@ const argv = yargs
     description: 'Handle records until a requested number of records. The count is 1-based.',
     type: 'number',
   })
+  .option('list-name', {
+    description: 'List name to import to. Please specify together with "--type custom".',
+    type: 'string',
+  })
   .option('verbose', {
     alias: 'v',
-    description: 'Show debug log',
+    description: 'Show debug log.',
     type: 'boolean',
   })
-  .example('node $0 "/tmp/example.csv" --email example@gmail.com --pass password', '')
+  .epilog(`Examples:
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password
+
+  will import places contained in file1.csv to "お気に入り" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --type want-to-go
+
+  will import places contained in file1.csv to "行ってみたい" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --from 3 --to 4
+
+  will import places located on the 3rd line and the 4th line in file1.csv to "お気に入り" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --from 3
+
+  will import places located from the 3rd line to the last line in file1.csv to "お気に入り" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --type custom --list-name リスト1
+
+  will import places contained in file1.csv to a list named "リスト1" of example@gmail.com.`)
   .help()
   .alias('help', 'h')
   .version(false)
@@ -83,6 +116,18 @@ const argv = yargs
       throw new Error("[ERROR] --to option requires a number 1 or more");
     }
 
+    if (argv.type === 'custom' && !argv['list-name']) {
+      throw new Error("[ERROR] Please specify \"--list-name NAME\" option when --type is \"custom\"");
+    }
+
+    if (argv['list-name'] && argv.type !== 'custom') {
+      throw new Error("[ERROR] --list-name option is not needed when --type is not \"custom\"");
+    }
+
+    if (argv['list-name'].length > 40) {
+      throw new Error("[ERROR] --list-name option requires a string up to 40 characters");
+    }
+
     return true;
   })
   .strictOptions()
@@ -93,6 +138,9 @@ if (argv.verbose) {
   logger.level = 'debug';
 }
 
+if (argv.type === 'custom' && argv['list-name']) {
+  mapTypeToListName.custom = argv['list-name'];
+}
 
 const parseCsv = async () => {
   const fs = require('fs');
@@ -113,9 +161,113 @@ const parseCsv = async () => {
   return records;
 };
 
+
+const signInToGoogle = async (page) => {
+  const cookies = await page.cookies();
+  const alreadySignedIn = cookies.some(c => c.name === 'SID');
+  if (alreadySignedIn) {
+    return;
+  }
+
+  logger.debug('Sign in to Google');
+
+  let loginElement = await page.waitForXPath('//a[text()="ログイン"]');
+  await loginElement.click();
+
+  // Reference: https://marian-caikovski.medium.com/automatically-sign-in-with-google-using-puppeteer-cc2cc656da1c
+  await page.waitForSelector('input[type="email"]')
+  await page.type('input[type="email"]', argv.email);
+  await Promise.all([
+    page.waitForNavigation(),
+    await page.keyboard.press('Enter')
+  ]);
+  await page.waitForSelector('input[type="password"]', {visible: true});
+  await page.type('input[type="password"]', argv.pass);
+  await Promise.all([
+    page.waitForNavigation(),
+    await page.keyboard.press('Enter')
+  ]);
+
+  logger.debug('Wait for 2FA');
+  await page.waitForNavigation();
+};
+
+
+const saveToList = async (page, listName) => {
+  const alreadySaved = (await page.$x(`//div[text()="「${listName}」に保存しました"]`)).length !== 0;
+  if (alreadySaved) {
+    return;
+  }
+
+  logger.debug('Click save button');
+  let saveButtonElement = await page.$('button[data-value^="保存"]');
+  await saveButtonElement.click();
+
+  if (argv.type === 'custom') {
+    await page.waitForSelector('ul[aria-label="リストに保存"]');
+
+    let customListAlreadyExists = (await page.$x(`//div[text()="${listName}"]`)).length !== 0;
+    if (!customListAlreadyExists) {
+      logger.debug(`Create a new list named ${listName}`);
+      let newListCreationElement = (await page.$x('//div[text()="新しいリスト"]')).pop();
+      newListCreationElement.click();
+
+      await page.waitForSelector('input[aria-label="リスト名"]');
+      await page.type('input[aria-label="リスト名"]', listName);
+
+      (await page.waitForXPath('//button[text()="作成"]')).click();
+
+      logger.debug('Wait until saving finish');
+      await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
+
+      return;
+    }
+  }
+
+  logger.debug(`Click ${listName} in save menu`);
+  // TODO: remove 'Favorite' word from unrelated statement
+  let menuItemFavoriteElement = await page.waitForXPath(`//div[text()="${listName}"]`);
+  await menuItemFavoriteElement.click();
+
+  logger.debug('Wait until saving finish');
+  await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
+};
+
+
+const saveMemo = async (page, listName, title, memo, url) => {
+  if (!memo) {
+    logger.debug('No memo');
+    return;
+  }
+
+  if (argv.type === 'starred-places') {
+    logger.warn(`${listName} list does not have a memo feature.`
+      + ` So this memo will not be saved. Name: "${title}". Memo: "${memo}". URL: "${url}"`);
+    return;
+  }
+
+  const memoAlreadyExists = await page.$(`button[aria-label="「${listName}」のメモを編集します"]`) !== null;
+  if (memoAlreadyExists) {
+    logger.error('Memo already exists. Please manually append memo.'
+      + ` Name: "${title}". Memo: "${memo}". URL: "${url}"`);
+    return;
+  }
+
+  logger.debug(`Add memo: "${memo}"`);
+  let memoAdditionButton = await page.waitForSelector(`button[aria-label="「${listName}」にメモを追加します"]`);
+  await memoAdditionButton.click();
+
+  await page.waitForSelector('textarea[aria-label]');
+  await page.type('textarea[aria-label]', memo);
+
+  let completeButton = await page.waitForXPath('//button[text()="完了"]');
+  await completeButton.click();
+};
+
+
 const URL = require('url').URL;
 
-const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
+const savePlaceAsFavorite = async (page, title, url, memo) => {
   logger.info(`Save a place named "${title}"`);
   const TARGET_PAGE_URL = new URL(url);
 
@@ -125,78 +277,18 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
     waitUntil: 'networkidle0'
   });
   if (!page_response.ok()) {
-    logger.error('Got error response code ' + page_response.status + ' from page');
-    await browser.close();
-    return;
+    throw new Error('Got error response code ' + page_response.status + ' from page. ');
   }
 
-  const cookies = await page.cookies();
-  const signedInWithGoogle = cookies.some(c => c.name === 'SID');
-  if (!signedInWithGoogle) {
-    logger.debug('Sign in with Google');
-
-    let loginElement = await page.waitForXPath('//a[text()="ログイン"]');
-    await loginElement.click();
-
-    // Reference: https://marian-caikovski.medium.com/automatically-sign-in-with-google-using-puppeteer-cc2cc656da1c
-    await page.waitForSelector('input[type="email"]')
-    await page.type('input[type="email"]', argv.email);
-    await Promise.all([
-      page.waitForNavigation(),
-      await page.keyboard.press('Enter')
-    ]);
-    await page.waitForSelector('input[type="password"]', {visible: true});
-    await page.type('input[type="password"]', argv.pass);
-    await Promise.all([
-      page.waitForNavigation(),
-      await page.keyboard.press('Enter')
-    ]);
-
-    logger.debug('Wait for 2FA');
-    await page.waitForNavigation();
-  }
+  await signInToGoogle(page);
 
   logger.debug('Wait for page rendering');
   await page.waitForSelector('button[aria-label*="住所"]', {timeout: 10000});
 
   const listName = mapTypeToListName[argv.type];
-  const alreadySaved = (await page.$x(`//div[text()="「${listName}」に保存しました"]`)).length !== 0;
-  if (!alreadySaved) {
-    logger.debug('Click save button');
-    let saveButtonElement = await page.$('button[data-value^="保存"]');
-    await saveButtonElement.click();
+  await saveToList(page, listName);
 
-    logger.debug('Click favorite in save menu');
-    let menuItemFavoriteElement = await page.waitForXPath(`//div[text()="${listName}"]`);
-    await menuItemFavoriteElement.click();
-
-    logger.debug('Wait until saving finish');
-    await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
-  }
-
-  if (memo) {
-    if (argv.type === 'starred-places') {
-      logger.warn(`${listName} list does not have a memo feature.`
-        + ` So this memo will not be saved. Name: "${title}". Memo: "${memo}". URL: "${url}"`);
-    } else {
-      const memoExists = await page.$(`button[aria-label="「${listName}」のメモを編集します"]`) !== null;
-
-      if (memoExists) {
-        logger.error('Memo already exists. Please manually append memo.'
-          + ` Name: "${title}". Memo: "${memo}". URL: "${url}"`);
-      } else {
-        logger.debug(`Add memo: "${memo}"`);
-        let memoAdditionButton = await page.waitForSelector(`button[aria-label="「${listName}」にメモを追加します"]`);
-        await memoAdditionButton.click();
-
-        await page.waitForSelector('textarea[aria-label]');
-        await page.type('textarea[aria-label]', memo);
-
-        let completeButton = await page.waitForXPath('//button[text()="完了"]');
-        await completeButton.click();
-      }
-    }
-  }
+  await saveMemo(page, listName, title, memo, url);
 
   logger.debug('Saving finished');
 };
@@ -218,7 +310,7 @@ const savePlacesAsFavorite = async (records) => {
 
   for (const record of records) {
     try {
-      await savePlaceAsFavorite(browser, page, record.title, record.URL, record.memo);
+      await savePlaceAsFavorite(page, record.title, record.URL, record.memo);
     } catch (e) {
       logger.error(`Failed to save place. Name: "${record.title}". Memo: "${record.memo}". URL: "${record.URL}"`, e);
     }
