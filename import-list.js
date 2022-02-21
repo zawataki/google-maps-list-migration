@@ -156,7 +156,7 @@ const parseCsv = async () => {
   }
   const records = parse(inputBuffer, options);
 
-  logger.debug('input', records);
+  logger.debug('Parsed records:', records);
 
   return records;
 };
@@ -210,12 +210,12 @@ const saveToList = async (page, listName) => {
     if (!customListAlreadyExists) {
       logger.debug(`Create a new list named ${listName}`);
       let newListCreationElement = (await page.$x('//div[text()="新しいリスト"]')).pop();
-      newListCreationElement.click();
+      await newListCreationElement.click();
 
       await page.waitForSelector('input[aria-label="リスト名"]');
       await page.type('input[aria-label="リスト名"]', listName);
 
-      (await page.waitForXPath('//button[text()="作成"]')).click();
+      await (await page.waitForXPath('//button[text()="作成"]')).click();
 
       logger.debug('Wait until saving finish');
       await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
@@ -225,9 +225,7 @@ const saveToList = async (page, listName) => {
   }
 
   logger.debug(`Click ${listName} in save menu`);
-  // TODO: remove 'Favorite' word from unrelated statement
-  let menuItemFavoriteElement = await page.waitForXPath(`//div[text()="${listName}"]`);
-  await menuItemFavoriteElement.click();
+  await (await page.waitForXPath(`//div[text()="${listName}"]`)).click();
 
   logger.debug('Wait until saving finish');
   await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
@@ -267,7 +265,7 @@ const saveMemo = async (page, listName, title, memo, url) => {
 
 const URL = require('url').URL;
 
-const savePlaceAsFavorite = async (page, title, url, memo) => {
+const savePlace = async (page, title, url, memo) => {
   logger.info(`Save a place named "${title}"`);
   const TARGET_PAGE_URL = new URL(url);
 
@@ -294,7 +292,7 @@ const savePlaceAsFavorite = async (page, title, url, memo) => {
 };
 
 
-const savePlacesAsFavorite = async (records) => {
+const savePlaces = async (places) => {
   const puppeteer = require('puppeteer-extra');
   const StealthPlugin = require('puppeteer-extra-plugin-stealth');
   puppeteer.use(StealthPlugin());
@@ -308,11 +306,11 @@ const savePlacesAsFavorite = async (records) => {
     'accept-language': 'ja'
   });
 
-  for (const record of records) {
+  for (const place of places) {
     try {
-      await savePlaceAsFavorite(page, record.title, record.URL, record.memo);
+      await savePlace(page, place.title, place.URL, place.memo);
     } catch (e) {
-      logger.error(`Failed to save place. Name: "${record.title}". Memo: "${record.memo}". URL: "${record.URL}"`, e);
+      logger.error(`Failed to save place. Name: "${place.title}". Memo: "${place.memo}". URL: "${place.URL}"`, e);
     }
   }
 
@@ -322,7 +320,7 @@ const savePlacesAsFavorite = async (records) => {
 
 const main = async () => {
   const records = await parseCsv();
-  await savePlacesAsFavorite(records);
+  await savePlaces(records);
 };
 
 
