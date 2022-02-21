@@ -156,7 +156,7 @@ const parseCsv = async () => {
   }
   const records = parse(inputBuffer, options);
 
-  logger.debug('input', records);
+  logger.debug('Parsed records:', records);
 
   return records;
 };
@@ -292,7 +292,7 @@ const savePlace = async (page, title, url, memo) => {
 };
 
 
-const savePlaces = async (records) => {
+const savePlaces = async (places) => {
   const puppeteer = require('puppeteer-extra');
   const StealthPlugin = require('puppeteer-extra-plugin-stealth');
   puppeteer.use(StealthPlugin());
@@ -306,11 +306,11 @@ const savePlaces = async (records) => {
     'accept-language': 'ja'
   });
 
-  for (const record of records) {
+  for (const place of places) {
     try {
-      await savePlace(page, record.title, record.URL, record.memo);
+      await savePlace(page, place.title, place.URL, place.memo);
     } catch (e) {
-      logger.error(`Failed to save place. Name: "${record.title}". Memo: "${record.memo}". URL: "${record.URL}"`, e);
+      logger.error(`Failed to save place. Name: "${place.title}". Memo: "${place.memo}". URL: "${place.URL}"`, e);
     }
   }
 
