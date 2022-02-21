@@ -124,6 +124,10 @@ const argv = yargs
       throw new Error("[ERROR] --list-name option is not needed when --type is not \"custom\"");
     }
 
+    if (argv['list-name'].length > 40) {
+      throw new Error("[ERROR] --list-name option requires a string up to 40 characters");
+    }
+
     return true;
   })
   .strictOptions()
@@ -134,6 +138,9 @@ if (argv.verbose) {
   logger.level = 'debug';
 }
 
+if (argv.type === 'custom' && argv['list-name']) {
+  mapTypeToListName.custom = argv['list-name'];
+}
 
 const parseCsv = async () => {
   const fs = require('fs');
@@ -196,7 +203,29 @@ const saveToList = async (page, listName) => {
   let saveButtonElement = await page.$('button[data-value^="保存"]');
   await saveButtonElement.click();
 
-  logger.debug('Click favorite in save menu');
+  if (argv.type === 'custom') {
+    await page.waitForSelector('ul[aria-label="リストに保存"]');
+
+    let customListAlreadyExists = (await page.$x(`//div[text()="${listName}"]`)).length !== 0;
+    if (!customListAlreadyExists) {
+      logger.debug(`Create a new list named ${listName}`);
+      let newListCreationElement = (await page.$x('//div[text()="新しいリスト"]')).pop();
+      newListCreationElement.click();
+
+      await page.waitForSelector('input[aria-label="リスト名"]');
+      await page.type('input[aria-label="リスト名"]', listName);
+
+      (await page.waitForXPath('//button[text()="作成"]')).click();
+
+      logger.debug('Wait until saving finish');
+      await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
+
+      return;
+    }
+  }
+
+  logger.debug(`Click ${listName} in save menu`);
+  // TODO: remove 'Favorite' word from unrelated statement
   let menuItemFavoriteElement = await page.waitForXPath(`//div[text()="${listName}"]`);
   await menuItemFavoriteElement.click();
 
@@ -255,8 +284,6 @@ const savePlaceAsFavorite = async (page, title, url, memo) => {
 
   logger.debug('Wait for page rendering');
   await page.waitForSelector('button[aria-label*="住所"]', {timeout: 10000});
-
-  // TODO: Create a new list when argv.type === 'custom'
 
   const listName = mapTypeToListName[argv.type];
   await saveToList(page, listName);
