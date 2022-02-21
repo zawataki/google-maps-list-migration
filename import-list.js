@@ -18,6 +18,7 @@ const mapTypeToListName = {
   'want-to-go': '行ってみたい',
   'travel-plans': '旅行プラン',
   'starred-places': 'スター付き',
+  'custom': '',
 };
 
 const yargs = require('yargs');
@@ -26,18 +27,17 @@ const argv = yargs
 
   Imports Google Maps saved list located CSV_FILE`)
   .option('email', {
-    description: 'Email address of Google account to import to',
+    description: 'Email address of Google account to import to.',
     type: 'string',
     demandOption: true,
   })
   .option('pass', {
-    description: 'Password of Google account to import to',
+    description: 'Password of Google account to import to.',
     type: 'string',
     demandOption: true,
   })
   .option('type', {
-    description: 'Type of list to import to',
-    type: 'string',
+    description: 'Type of list to import to.',
     default: 'favorite',
     choices: Object.keys(mapTypeToListName)
   })
@@ -50,12 +50,45 @@ const argv = yargs
     description: 'Handle records until a requested number of records. The count is 1-based.',
     type: 'number',
   })
+  .option('list-name', {
+    description: 'List name to import to. Please specify together with "--type custom".',
+    type: 'string',
+  })
   .option('verbose', {
     alias: 'v',
-    description: 'Show debug log',
+    description: 'Show debug log.',
     type: 'boolean',
   })
-  .example('node $0 "/tmp/example.csv" --email example@gmail.com --pass password', '')
+  .epilog(`Examples:
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password
+
+  will import places contained in file1.csv to "お気に入り" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --type want-to-go
+
+  will import places contained in file1.csv to "行ってみたい" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --from 3 --to 4
+
+  will import places located on the 3rd line and the 4th line in file1.csv to "お気に入り" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --from 3
+
+  will import places located from the 3rd line to the last line in file1.csv to "お気に入り" list of example@gmail.com.
+
+  The command:
+
+    node $0 file1.csv --email example@gmail.com --pass password --type custom --list-name リスト1
+
+  will import places contained in file1.csv to a list named "リスト1" of example@gmail.com.`)
   .help()
   .alias('help', 'h')
   .version(false)
@@ -81,6 +114,14 @@ const argv = yargs
 
     if ('to' in argv && (isNaN(argv.to) || argv.to < 1)) {
       throw new Error("[ERROR] --to option requires a number 1 or more");
+    }
+
+    if (argv.type === 'custom' && !argv['list-name']) {
+      throw new Error("[ERROR] Please specify \"--list-name NAME\" option when --type is \"custom\"");
+    }
+
+    if (argv['list-name'] && argv.type !== 'custom') {
+      throw new Error("[ERROR] --list-name option is not needed when --type is not \"custom\"");
     }
 
     return true;
@@ -158,6 +199,8 @@ const savePlaceAsFavorite = async (browser, page, title, url, memo) => {
 
   logger.debug('Wait for page rendering');
   await page.waitForSelector('button[aria-label*="住所"]', {timeout: 10000});
+
+  // TODO: Create a new list when argv.type === 'custom'
 
   const listName = mapTypeToListName[argv.type];
   const alreadySaved = (await page.$x(`//div[text()="「${listName}」に保存しました"]`)).length !== 0;
