@@ -9,6 +9,9 @@
   },
   "author": "Yuki Takizawa",
   "homepage": "https://github.com/zawataki/google-maps-list-migration",
+  "engines": {
+    "node": "16.x"
+  },
   "dependencies": {
     "csv-parse": "^5.0.4",
     "log4js": "^6.4.1",
