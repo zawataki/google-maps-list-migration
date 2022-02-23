@@ -192,6 +192,8 @@ const signInToGoogle = async (page) => {
   await page.waitForNavigation();
 };
 
+const {setTimeout} = require('timers/promises');
+let isFirstPlace = true;
 
 const saveToList = async (page, listName) => {
   const alreadySaved = (await page.$x(`//div[text()="「${listName}」に保存しました"]`)).length !== 0;
@@ -208,19 +210,34 @@ const saveToList = async (page, listName) => {
 
     let customListAlreadyExists = (await page.$x(`//div[text()="${listName}"]`)).length !== 0;
     if (!customListAlreadyExists) {
-      logger.debug(`Create a new list named ${listName}`);
-      let newListCreationElement = (await page.$x('//div[text()="新しいリスト"]')).pop();
-      await newListCreationElement.click();
+      if (isFirstPlace) {
+        logger.info(`Create a new list named ${listName}`);
+        let newListCreationElement = (await page.$x('//div[text()="新しいリスト"]')).pop();
+        await newListCreationElement.click();
 
-      await page.waitForSelector('input[aria-label="リスト名"]');
-      await page.type('input[aria-label="リスト名"]', listName);
+        await page.waitForSelector('input[aria-label="リスト名"]');
+        await page.type('input[aria-label="リスト名"]', listName);
 
-      await (await page.waitForXPath('//button[text()="作成"]')).click();
+        await (await page.waitForXPath('//button[text()="作成"]')).click();
 
-      logger.debug('Wait until saving finish');
-      await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
+        logger.debug('Wait until saving finish');
+        await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
 
-      return;
+        return;
+      }
+      isFirstPlace = false;
+
+      do {
+        const sleepTimeSecond = 3;
+        logger.debug(`Wait ${sleepTimeSecond} seconds until the created custom list is shown`);
+        await setTimeout(sleepTimeSecond * 1000);
+        await page.reload();
+        await (await page.$('button[data-value^="保存"]')).click();
+        await page.waitForSelector('ul[aria-label="リストに保存"]');
+
+        customListAlreadyExists = (await page.$x(`//div[text()="${listName}"]`)).length !== 0;
+      } while (!customListAlreadyExists);
+
     }
   }
 
