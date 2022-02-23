@@ -223,9 +223,10 @@ const saveToList = async (page, listName) => {
         logger.debug('Wait until saving finish');
         await page.waitForSelector(`div[aria-label="「${listName}」に保存しました"]`);
 
+        isFirstPlace = false;
+
         return;
       }
-      isFirstPlace = false;
 
       do {
         const sleepTimeSecond = 3;
