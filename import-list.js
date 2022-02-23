@@ -124,7 +124,7 @@ const argv = yargs
       throw new Error("[ERROR] --list-name option is not needed when --type is not \"custom\"");
     }
 
-    if (argv['list-name'].length > 40) {
+    if (argv.type === 'custom' && argv['list-name'].length > 40) {
       throw new Error("[ERROR] --list-name option requires a string up to 40 characters");
     }
 
